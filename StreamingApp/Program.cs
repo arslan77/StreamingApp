@@ -1,26 +1,33 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading;
-using System.Threading.Tasks;
+﻿using StreamingApp.Utility;
 using Topshelf;
 
 namespace StreamingApp
 {
-    class Program
+    internal class Program
     {
-
-        static void Main(string[] args)
+        private static void Main()
         {
-            HostFactory.Run(hostConfig =>
+            ConfigureService.Configure();
+        }
+    }
+    internal static class ConfigureService
+    {
+        internal static void Configure()
+        {
+            var configuration = new ConfigurationManager();
+
+            HostFactory.Run(configure =>
             {
-                hostConfig.Service<VideoStreamingService>(serviceConfig =>
+                configure.Service<VideoStreamingService>(service =>
                 {
-                    serviceConfig.ConstructUsing(() => new VideoStreamingService());
-                    serviceConfig.WhenStarted(s => s.Start());
-                    serviceConfig.WhenStopped(s => s.Stop());
+                    service.ConstructUsing(s => new VideoStreamingService(configuration.Get("VideosPath")));
+                    service.WhenStarted(s => s.Start());
+                    service.WhenStopped(s => s.Stop());
                 });
+                configure.RunAsLocalSystem();
+                configure.SetServiceName(configuration.Get("ServiceName"));
+                configure.SetDisplayName(configuration.Get("DisplayName"));
+                configure.SetDescription(configuration.Get("ServiceDescription"));
             });
         }
     }
