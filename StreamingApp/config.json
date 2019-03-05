@@ -1,6 +1,6 @@
 {
-  "ServiceName": "RobotwalaOfflineVideosServer",
-  "DisplayName": "Robotwala Offline Videos Service",
-  "ServiceDescription": "This service hosting videos for Robotwala platform",
+  "ServiceName": "RobotWalaOfflineVideosServer",
+  "DisplayName": "RobotWala Offline Videos Service",
+  "ServiceDescription": "This service hosting videos for RobotWala platform",
   "VideosPath": "H:\\TestMe"
 }
