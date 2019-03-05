@@ -4,29 +4,29 @@ using System.IO;
 using System.Net.Sockets;
 using System.Threading;
 
-namespace StreamingApp
+namespace StreamingApp.Server
 {
     public abstract class HttpServer
     {
-        protected int Port;
-        public TcpListener Listener;
+        private readonly int _port;
+        private TcpListener _listener;
         private const bool IsActive = true;
 
         protected HttpServer(int port)
         {
-            this.Port = port;
+            this._port = port;
         }
 
         public void Listen()
         {
 #pragma warning disable 618
-            Listener = new TcpListener(Port);
+            _listener = new TcpListener(_port);
 #pragma warning restore 618
-            Listener.Start();
+            _listener.Start();
             // ReSharper disable once ConditionIsAlwaysTrueOrFalse
             while (IsActive)
             {
-                var s = Listener.AcceptTcpClient();
+                var s = _listener.AcceptTcpClient();
                 var processor = new HttpProcessor(s, this);
                 var thread = new Thread(new ThreadStart(processor.Process));
                 thread.Start();
@@ -115,10 +115,10 @@ namespace StreamingApp
             };
 
         private readonly string _rootDirectory;
-        protected internal string S;
+        private string _s;
 
 
-        public MyVideoStreamingServer(int port, String path)
+        public MyVideoStreamingServer(int port, string path)
             : base(port)
         {
             _rootDirectory = path;
@@ -126,77 +126,75 @@ namespace StreamingApp
 
         public override void HandleGetRequest(HttpProcessor p)
         {
-            string filename = p.HttpUrl;
+            var filename = p.HttpUrl;
             filename = filename.Substring(1);
             Console.WriteLine(filename);
             filename = Path.Combine(_rootDirectory, filename);
-            S = MimeTypeMappings.TryGetValue(Path.GetExtension(filename), out var mime)
+            _s = MimeTypeMappings.TryGetValue(Path.GetExtension(filename), out var mime)
                 ? mime
                 : "application/octet-stream";
-            if (File.Exists(filename))
+            if (!File.Exists(filename)) return;
+            try
             {
-                try
+                Console.WriteLine("request: {0}", p.HttpUrl);
+                if (mime != null && (mime.Contains("video") || mime.Contains("audio")))
                 {
-                    Console.WriteLine("request: {0}", p.HttpUrl);
-                    if (mime != null && (mime.Contains("video") || mime.Contains("audio")))
+                    using (var fs = new FileStream(filename, FileMode.Open))
                     {
-                        using (FileStream fs = new FileStream(filename, FileMode.Open))
+                        int startByte;
+                        var endByte = -1;
+                        if (p.HttpHeaders.Contains("Range"))
                         {
-                            int startByte;
-                            var endByte = -1;
-                            if (p.HttpHeaders.Contains("Range"))
-                            {
-                                var rangeHeader = p.HttpHeaders["Range"].ToString().Replace("bytes=", "");
-                                var range = rangeHeader.Split('-');
-                                startByte = int.Parse(range[0]);
-                                if (range[1].Trim().Length > 0) int.TryParse(range[1], out endByte);
-                                if (endByte == -1) endByte = (int) fs.Length;
-                            }
-                            else
-                            {
-                                startByte = 0;
-                                endByte = (int) fs.Length;
-                            }
-
-                            byte[] buffer = new byte[endByte - startByte];
-                            fs.Position = startByte;
-                            fs.Read(buffer, 0, endByte - startByte);
-                            fs.Flush();
-                            fs.Close();
-                            p.OutputStream.AutoFlush = true;
-                            p.OutputStream.WriteLine("HTTP/1.0 206 Partial Content");
-                            p.OutputStream.WriteLine("Content-Type: " + mime);
-                            p.OutputStream.WriteLine("Accept-Ranges: bytes");
-                            var totalCount = startByte + buffer.Length;
-                            p.OutputStream.WriteLine($"Content-Range: bytes {startByte}-{totalCount - 1}/{totalCount}");
-                            p.OutputStream.WriteLine("Content-Length: " + buffer.Length.ToString());
-                            p.OutputStream.WriteLine("Connection: keep-alive");
-                            p.OutputStream.WriteLine("");
-                            p.OutputStream.AutoFlush = false;
-
-                            p.OutputStream.BaseStream.Write(buffer, 0, buffer.Length);
-                            p.OutputStream.BaseStream.Flush();
+                            var rangeHeader = p.HttpHeaders["Range"].ToString().Replace("bytes=", "");
+                            var range = rangeHeader.Split('-');
+                            startByte = int.Parse(range[0]);
+                            if (range[1].Trim().Length > 0) int.TryParse(range[1], out endByte);
+                            if (endByte == -1) endByte = (int) fs.Length;
                         }
-                    }
-                    else
-                    {
-                        byte[] buffer = File.ReadAllBytes(filename);
-                        p.OutputStream.AutoFlush = true;
-                        p.OutputStream.WriteLine("HTTP/1.0 200 OK");
-                        p.OutputStream.WriteLine("Content-Type: " + mime);
-                        p.OutputStream.WriteLine("Connection: close");
-                        p.OutputStream.WriteLine("Content-Length: " + buffer.Length.ToString());
-                        p.OutputStream.WriteLine("");
+                        else
+                        {
+                            startByte = 0;
+                            endByte = (int) fs.Length;
+                        }
 
+                        var buffer = new byte[endByte - startByte];
+                        fs.Position = startByte;
+                        fs.Read(buffer, 0, endByte - startByte);
+                        fs.Flush();
+                        fs.Close();
+                        p.OutputStream.AutoFlush = true;
+                        p.OutputStream.WriteLine("HTTP/1.0 206 Partial Content");
+                        p.OutputStream.WriteLine("Content-Type: " + mime);
+                        p.OutputStream.WriteLine("Accept-Ranges: bytes");
+                        var totalCount = startByte + buffer.Length;
+                        p.OutputStream.WriteLine($"Content-Range: bytes {startByte}-{totalCount - 1}/{totalCount}");
+                        p.OutputStream.WriteLine("Content-Length: " + buffer.Length.ToString());
+                        p.OutputStream.WriteLine("Connection: keep-alive");
+                        p.OutputStream.WriteLine("");
                         p.OutputStream.AutoFlush = false;
+
                         p.OutputStream.BaseStream.Write(buffer, 0, buffer.Length);
                         p.OutputStream.BaseStream.Flush();
                     }
                 }
-                catch (Exception)
+                else
                 {
-                    // ignored
+                    var buffer = File.ReadAllBytes(filename);
+                    p.OutputStream.AutoFlush = true;
+                    p.OutputStream.WriteLine("HTTP/1.0 200 OK");
+                    p.OutputStream.WriteLine("Content-Type: " + mime);
+                    p.OutputStream.WriteLine("Connection: close");
+                    p.OutputStream.WriteLine("Content-Length: " + buffer.Length.ToString());
+                    p.OutputStream.WriteLine("");
+
+                    p.OutputStream.AutoFlush = false;
+                    p.OutputStream.BaseStream.Write(buffer, 0, buffer.Length);
+                    p.OutputStream.BaseStream.Flush();
                 }
+            }
+            catch (Exception)
+            {
+                // ignored
             }
         }
 

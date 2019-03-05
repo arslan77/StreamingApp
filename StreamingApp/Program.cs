@@ -18,6 +18,14 @@ namespace StreamingApp
 
             HostFactory.Run(configure =>
             {
+                configure.StartAutomatically(); // Start the service automatically
+                configure.EnableServiceRecovery(src =>
+                {
+                    src.RestartService(0);
+                    src.RestartService(1);
+                    // Corresponds to ‘Subsequent failures: Restart the Service’
+                    src.RestartService(5);
+                });
                 configure.Service<VideoStreamingService>(service =>
                 {
                     service.ConstructUsing(s => new VideoStreamingService(configuration.Get("VideosPath")));

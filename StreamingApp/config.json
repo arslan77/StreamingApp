@@ -1,6 +1,6 @@
 {
-  "ServiceName": "ABC",
-  "DisplayName": "XYZ",
-  "ServiceDescription": "Lorem Ispum",
-  "VideosPath" :  "C:\\XYZ" 
+  "ServiceName": "RobotwalaOfflineVideosServer",
+  "DisplayName": "Robotwala Offline Videos Service",
+  "ServiceDescription": "This service hosting videos for Robotwala platform",
+  "VideosPath": "H:\\TestMe"
 }

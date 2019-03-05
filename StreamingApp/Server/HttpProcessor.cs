@@ -4,35 +4,33 @@ using System.IO;
 using System.Net.Sockets;
 using System.Threading;
 
-namespace StreamingApp
+namespace StreamingApp.Server
 {
-
     public class HttpProcessor
     {
-        public TcpClient Socket;
-        public HttpServer Srv;
+        private readonly TcpClient _socket;
+        private readonly HttpServer _srv;
         private Stream _inputStream;
         public StreamWriter OutputStream;
-
-        public string HttpMethod;
+        private string _httpMethod;
 
         public string HttpUrl;
-        public string HttpProtocolVersionString;
-        public Hashtable HttpHeaders = new Hashtable();
+        private string _httpProtocolVersionString;
+        public readonly Hashtable HttpHeaders = new Hashtable();
 
 
         private const int MaxPostSize = 10 * 1024 * 1024; // 10MB
 
         public HttpProcessor(TcpClient s, HttpServer srv)
         {
-            Socket = s;
-            Srv = srv;
+            _socket = s;
+            _srv = srv;
         }
 
 
         private static string StreamReadLine(Stream inputStream)
         {
-            string data = "";
+            var data = "";
             while (true)
             {
                 var nextChar = inputStream.ReadByte();
@@ -41,18 +39,17 @@ namespace StreamingApp
                     break;
                 }
 
-                if (nextChar == '\r')
+                switch (nextChar)
                 {
-                    continue;
+                    case '\r':
+                        continue;
+                    case -1:
+                        Thread.Sleep(1);
+                        continue;
+                    default:
+                        data += Convert.ToChar(nextChar);
+                        break;
                 }
-
-                if (nextChar == -1)
-                {
-                    Thread.Sleep(1);
-                    continue;
-                }
-
-                data += Convert.ToChar(nextChar);
             }
 
             return data;
@@ -62,19 +59,19 @@ namespace StreamingApp
         {
             // we can't use a StreamReader for input, because it buffers up extra data on us inside it's
             // "processed" view of the world, and we want the data raw after the headers
-            _inputStream = new BufferedStream(Socket.GetStream());
+            _inputStream = new BufferedStream(_socket.GetStream());
 
             // we probably shouldn't be using a stream writer for all output from handlers either
-            OutputStream = new StreamWriter(new BufferedStream(Socket.GetStream()));
+            OutputStream = new StreamWriter(new BufferedStream(_socket.GetStream()));
             try
             {
                 ParseRequest();
                 ReadHeaders();
-                if (HttpMethod.Equals("GET"))
+                if (_httpMethod.Equals("GET"))
                 {
                     HandleGetRequest();
                 }
-                else if (HttpMethod.Equals("POST"))
+                else if (_httpMethod.Equals("POST"))
                 {
                     HandlePostRequest();
                 }
@@ -89,10 +86,10 @@ namespace StreamingApp
             // bs.Flush(); // flush any remaining output
             _inputStream = null;
             OutputStream = null; // bs = null;            
-            Socket.Close();
+            _socket.Close();
         }
 
-        public void ParseRequest()
+        private void ParseRequest()
         {
             var request = StreamReadLine(_inputStream);
             var tokens = request.Split(' ');
@@ -101,17 +98,17 @@ namespace StreamingApp
                 throw new Exception("invalid http request line");
             }
 
-            HttpMethod = tokens[0].ToUpper();
+            _httpMethod = tokens[0].ToUpper();
             HttpUrl = tokens[1];
-            HttpProtocolVersionString = tokens[2];
+            _httpProtocolVersionString = tokens[2];
 
             Console.WriteLine("starting: " + request);
         }
 
-        public void ReadHeaders()
+        private void ReadHeaders()
         {
             Console.WriteLine("readHeaders()");
-            String line;
+            string line;
             while ((line = StreamReadLine(_inputStream)) != null)
             {
                 if (line.Equals(""))
@@ -121,34 +118,34 @@ namespace StreamingApp
                 }
 
 
-                int separator = line.IndexOf(':');
+                var separator = line.IndexOf(':');
                 if (separator == -1)
                 {
                     throw new Exception("invalid http header line: " + line);
                 }
 
                 String name = line.Substring(0, separator);
-                int pos = separator + 1;
+                var pos = separator + 1;
                 while ((pos < line.Length) && (line[pos] == ' '))
                 {
                     pos++; // strip any spaces
                 }
 
 
-                string value = line.Substring(pos, line.Length - pos);
+                var value = line.Substring(pos, line.Length - pos);
                 Console.WriteLine("header: {0}:{1}", name, value);
                 HttpHeaders[name] = value;
             }
         }
 
-        public void HandleGetRequest()
+        private void HandleGetRequest()
         {
-            Srv.HandleGetRequest(this);
+            _srv.HandleGetRequest(this);
         }
 
         private const int BufSize = 4096;
 
-        public void HandlePostRequest()
+        private void HandlePostRequest()
         {
             // this post data processing just reads everything into a memory stream.
             // this is fine for smallish things, but for large stuff we should really
@@ -167,13 +164,13 @@ namespace StreamingApp
                         $"POST Content-Length({contentLen}) too big for this simple server");
                 }
 
-                byte[] buf = new byte[BufSize];
-                int toRead = contentLen;
+                var buf = new byte[BufSize];
+                var toRead = contentLen;
                 while (toRead > 0)
                 {
                     Console.WriteLine("starting Read, to_read={0}", toRead);
 
-                    int numRead = _inputStream.Read(buf, 0, Math.Min(BufSize, toRead));
+                    var numRead = _inputStream.Read(buf, 0, Math.Min(BufSize, toRead));
                     Console.WriteLine("read finished, numRead={0}", numRead);
                     if (numRead == 0)
                     {
@@ -195,7 +192,7 @@ namespace StreamingApp
             }
 
             Console.WriteLine("get post data end");
-            Srv.HandlePostRequest(this, new StreamReader(ms));
+            _srv.HandlePostRequest(this, new StreamReader(ms));
         }
 
         public void WriteSuccess()
@@ -206,7 +203,7 @@ namespace StreamingApp
             OutputStream.Write("\n");
         }
 
-        public void WriteFailure()
+        private void WriteFailure()
         {
             OutputStream.Write("HTTP/1.0 404 File not found\n");
             OutputStream.Write("Connection: close\n");

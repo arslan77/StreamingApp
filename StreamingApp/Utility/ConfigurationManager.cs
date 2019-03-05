@@ -12,7 +12,15 @@ namespace StreamingApp.Utility
 
         public ConfigurationManager()
         {
-            var file = new FileStream("../../config.json", FileMode.Open);
+            FileStream file;
+            try
+            {
+                file = new FileStream("config.json", FileMode.Open);
+            }
+            catch (FileNotFoundException)
+            {
+                file = new FileStream("../../config.json", FileMode.Open);
+            }
             string jsonString;
             using (var streamReader = new StreamReader(file, Encoding.UTF8))
             {
